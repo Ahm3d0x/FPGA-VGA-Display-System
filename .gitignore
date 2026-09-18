@@ -1,0 +1,18 @@
+# ModelSim / QuestaSim Simulation Artifacts
+build/
+work/
+transcript
+*/transcript
+*.wlf
+*.log
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS Generated Files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store

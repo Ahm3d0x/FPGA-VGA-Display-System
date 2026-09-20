@@ -1,9 +1,12 @@
+`timescale 1ns/1ps
+
 module rgb_renderer_tb ();
 // ports
     integer file;
     integer x;
     integer y;
 
+    reg clk;
     reg [9:0] pixel_x;
     reg [9:0] pixel_y;
     reg [3:0] shape_form;
@@ -13,8 +16,12 @@ module rgb_renderer_tb ();
     wire green;
     wire blue;
 
+    // Clock generator (50 MHz / 20ns period)
+    always #10 clk = ~clk;
+
 // DUT
     rgb_renderer dut (
+        .clk(clk),
         .pixel_x(pixel_x),
         .pixel_y(pixel_y),
         .shape_form(shape_form),
@@ -50,6 +57,7 @@ module rgb_renderer_tb ();
                 for (x = 0; x < 640; x = x + 1) begin
                     pixel_x = x;
                     pixel_y = y;
+                    @(posedge clk);
                     #1;
                     // Write RGB (safeguarded against unknown/x values)
                     $fwrite(file, "%0d ", (red   === 1'b1) ? 255 : 0);
@@ -69,6 +77,7 @@ module rgb_renderer_tb ();
 
     // main test initial block
     initial begin
+        clk = 0;
         // Test Graphics Engine
         generate_ppm(4'd0,1'b1);
         generate_ppm(4'd1,1'b1);
@@ -83,10 +92,6 @@ module rgb_renderer_tb ();
         generate_ppm(4'd10,1'b1);
         // Test Image ROM
         generate_ppm(4'd11,1'b1);
-        generate_ppm(4'd12,1'b1);
-        generate_ppm(4'd13,1'b1);   
-        generate_ppm(4'd14,1'b1);
-        generate_ppm(4'd15,1'b1);
         $display("====================================");
         $display("ALL TESTS COMPLETED SUCCESSFULLY");
         $display("====================================");

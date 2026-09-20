@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 // module graphics_engine_tb();
 
 //     localparam SHAPE_FORM = 6;

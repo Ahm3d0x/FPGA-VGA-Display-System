@@ -19,14 +19,14 @@
 #
 # Quartus Prime
 # Version 25.1std.0 Build 1129 10/21/2025 SC Lite Edition
-# Date created = 00:07:02  September 20, 2026
+# Date created = 18:15:23  September 20, 2026
 #
 # -------------------------------------------------------------------------- #
 #
 # Notes:
 #
 # 1) The default values for assignments are stored in the file:
-#		rgb_renderer_assignment_defaults.qdf
+#		vga_top_assignment_defaults.qdf
 #    If this file doesn't exist, see file:
 #		assignment_defaults.qdf
 #
@@ -39,10 +39,12 @@
 
 set_global_assignment -name FAMILY "Cyclone IV E"
 set_global_assignment -name DEVICE EP4CE6E22C8
-set_global_assignment -name TOP_LEVEL_ENTITY rgb_renderer
+set_global_assignment -name TOP_LEVEL_ENTITY vga_top
 set_global_assignment -name ORIGINAL_QUARTUS_VERSION 25.1STD.0
-set_global_assignment -name PROJECT_CREATION_TIME_DATE "00:07:02  SEPTEMBER 20, 2026"
+set_global_assignment -name PROJECT_CREATION_TIME_DATE "18:15:23  SEPTEMBER 20, 2026"
 set_global_assignment -name LAST_QUARTUS_VERSION "25.1std.0 Lite Edition"
+set_global_assignment -name VERILOG_FILE ../rtl/vga_top.v
+set_global_assignment -name VERILOG_FILE ../rtl/VGA_Sync.v
 set_global_assignment -name VERILOG_FILE ../rtl/rgb_renderer.v
 set_global_assignment -name VERILOG_FILE ../rtl/image_rom.v
 set_global_assignment -name VERILOG_FILE ../rtl/graphics_engine.v

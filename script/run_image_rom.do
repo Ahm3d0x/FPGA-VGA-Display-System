@@ -31,7 +31,7 @@ vlog -sv -work work ../rtl/image_rom.v
 vlog -sv -work work ../tb/image_rom_tb.v
 
 # 5. Launch simulation
-vsim -voptargs=+acc work.image_rom_tb
+vsim -L altera_mf_ver -voptargs=+acc work.image_rom_tb
 
 # 6. Run simulation until $stop (prints $display to the console)
 run -all

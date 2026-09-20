@@ -38,8 +38,8 @@ vlog -sv -work work ../rtl/image_rom.v
 vlog -sv -work work ../rtl/rgb_renderer.v
 vlog -sv -work work ../tb/rgb_renderer_tb.v
 
-# 6. Launch simulation (optimized for fast execution, no waves recorded)
-vsim work.rgb_renderer_tb
+# 6. Launch simulation (optimized for fast execution, with Altera megafunctions library)
+vsim -L altera_mf_ver work.rgb_renderer_tb
 
 # 7. Run the full test sequence to generate all output images
 run -all

@@ -1,5 +1,8 @@
+`timescale 1ns/1ps
+
 module image_rom_tb();
 
+    reg clk;
     reg [9:0] pixel_x;
     reg [9:0] pixel_y;
     localparam photo_num = 0;
@@ -7,7 +10,10 @@ module image_rom_tb();
     wire green;
     wire blue;
 
+    always #10 clk = ~clk;
+
     image_rom dut (
+        .clk(clk),
         .pixel_x(pixel_x),
         .pixel_y(pixel_y),
         .red(red),
@@ -16,6 +22,7 @@ module image_rom_tb();
     );
 
     initial begin
+        clk = 0;
 
         // Pixel 0
         pixel_x = 0;

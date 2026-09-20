@@ -16,3 +16,10 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 .DS_Store
+
+# Quartus Artifacts
+quartus/db/
+quartus/incremental_db/
+quartus/output_files/
+quartus/simulation/
+*.qws

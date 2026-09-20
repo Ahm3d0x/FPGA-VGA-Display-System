@@ -51,10 +51,10 @@ module rgb_renderer_tb ();
                     pixel_x = x;
                     pixel_y = y;
                     #1;
-                    // Write RGB
-                    $fwrite(file, "%0d ", red   * 255);
-                    $fwrite(file, "%0d ", green * 255);
-                    $fwrite(file, "%0d ", blue  * 255);
+                    // Write RGB (safeguarded against unknown/x values)
+                    $fwrite(file, "%0d ", (red   === 1'b1) ? 255 : 0);
+                    $fwrite(file, "%0d ", (green === 1'b1) ? 255 : 0);
+                    $fwrite(file, "%0d ", (blue  === 1'b1) ? 255 : 0);
                 end
                 $fwrite(file, "\n");
             end

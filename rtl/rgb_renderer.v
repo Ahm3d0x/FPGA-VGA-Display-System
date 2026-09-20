@@ -1,4 +1,5 @@
 module rgb_renderer (
+    input wire        clk,
     input wire [9:0] pixel_x,
     input wire [9:0] pixel_y,
     input wire [3:0] shape_form,
@@ -32,9 +33,10 @@ module rgb_renderer (
 
     // Image ROM
     image_rom image_inst (
+        .clk(clk),
         .pixel_x(pixel_x),
         .pixel_y(pixel_y),
-        .shape_form(shape_form[3:0]),
+        // .shape_form(shape_form[3:0]),
         .red(i_red),
         .green(i_green),
         .blue(i_blue)

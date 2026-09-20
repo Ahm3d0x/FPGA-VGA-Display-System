@@ -7,7 +7,7 @@ module image_rom_tb();
     wire green;
     wire blue;
 
-    image_rom #( .photo_num(photo_num) ) dut (
+    image_rom dut (
         .pixel_x(pixel_x),
         .pixel_y(pixel_y),
         .red(red),

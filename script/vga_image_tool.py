@@ -69,6 +69,9 @@ STRINGS = {
         "btn_export_mem": "📝 حفظ كملف MEM ثنائي ($readmemb)",
         "btn_export_hex": "📄 حفظ كملف HEX ست عشري ($readmemh)",
         "btn_export_mif": "⚙️ حفظ كملف MIF لبرنامج Quartus",
+        "mif_radix_lbl": "صيغة رادكس MIF:",
+        "mif_radix_bin": "ثنائي (UNS/BIN) - مثل photo_11.mif",
+        "mif_radix_hex": "ست عشري (HEX/HEX)",
         "btn_export_verilog": "📦 حفظ كملف موديول Verilog (.v)",
         "btn_copy_verilog": "📋 نسخ كود Verilog إلى الحافظة",
         "btn_send_to_viewer": "🔍 إرسال الصورة للمستعرض ➔",
@@ -163,6 +166,9 @@ STRINGS = {
         "btn_export_mem": "📝 Save as Binary MEM ($readmemb)",
         "btn_export_hex": "📄 Save as Hex MEM ($readmemh)",
         "btn_export_mif": "⚙️ Save as Quartus MIF File (.mif)",
+        "mif_radix_lbl": "MIF Radix Format:",
+        "mif_radix_bin": "Binary (UNS/BIN) - photo_11.mif style",
+        "mif_radix_hex": "Hexadecimal (HEX/HEX)",
         "btn_export_verilog": "📦 Save as Verilog Module (.v)",
         "btn_copy_verilog": "📋 Copy Verilog to Clipboard",
         "btn_send_to_viewer": "🔍 Send to Image Viewer ➔",
@@ -242,6 +248,7 @@ class VGAImageToolApp(tk.Tk):
         self.conv_flip_y_var = tk.BooleanVar(value=False)
         self.conv_brightness_var = tk.DoubleVar(value=1.0)
         self.conv_contrast_var = tk.DoubleVar(value=1.0)
+        self.conv_mif_radix_var = tk.StringVar(value="bin")
 
         # Crop Parameters
         self.crop_scale = 1.0       # 0.05 to 1.0
@@ -492,8 +499,12 @@ class VGAImageToolApp(tk.Tk):
         self.btn_export_hex = ttk.Button(self.ctrl_frame, text=self.tr("btn_export_hex"), command=self._export_hex)
         self.btn_export_hex.pack(fill=tk.X, pady=2)
 
-        self.btn_export_mif = ttk.Button(self.ctrl_frame, text=self.tr("btn_export_mif"), command=self._export_mif)
-        self.btn_export_mif.pack(fill=tk.X, pady=2)
+        mif_box = ttk.Frame(self.ctrl_frame)
+        mif_box.pack(fill=tk.X, pady=2)
+        self.btn_export_mif = ttk.Button(mif_box, text=self.tr("btn_export_mif"), command=self._export_mif)
+        self.btn_export_mif.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.mif_radix_cb = ttk.Combobox(mif_box, textvariable=self.conv_mif_radix_var, width=14, state="readonly")
+        self.mif_radix_cb.pack(side=tk.RIGHT, padx=(4, 0))
 
         self.btn_export_verilog = ttk.Button(self.ctrl_frame, text=self.tr("btn_export_verilog"), command=self._export_verilog_module)
         self.btn_export_verilog.pack(fill=tk.X, pady=2)
@@ -697,6 +708,16 @@ class VGAImageToolApp(tk.Tk):
         self.btn_export_mem.config(text=self.tr("btn_export_mem"))
         self.btn_export_hex.config(text=self.tr("btn_export_hex"))
         self.btn_export_mif.config(text=self.tr("btn_export_mif"))
+        mif_presets = [
+            self.tr("mif_radix_bin"),
+            self.tr("mif_radix_hex")
+        ]
+        self.mif_radix_cb["values"] = mif_presets
+        if "hex" in self.conv_mif_radix_var.get().lower():
+            self.mif_radix_cb.set(mif_presets[1])
+        else:
+            self.mif_radix_cb.set(mif_presets[0])
+
         self.btn_export_verilog.config(text=self.tr("btn_export_verilog"))
         self.btn_copy_verilog.config(text=self.tr("btn_copy_verilog"))
         self.btn_send_viewer.config(text=self.tr("btn_send_to_viewer"))
@@ -1178,16 +1199,30 @@ class VGAImageToolApp(tk.Tk):
                 bpp_mode = self.bpp_cb.get()
                 width = 3 if "3" in bpp_mode else (8 if "8" in bpp_mode else (12 if "12" in bpp_mode else (16 if "16" in bpp_mode else 24)))
                 depth = len(raw_values)
+                cur_sel = self.mif_radix_cb.get()
+                is_hex = ("hex" in cur_sel.lower()) or ("ست" in cur_sel)
+
                 with open(out_path, "w", encoding="utf-8") as f:
-                    f.write(f"-- Altera/Intel Memory Initialization File (MIF)\n")
-                    f.write(f"WIDTH={width};\n")
-                    f.write(f"DEPTH={depth};\n\n")
-                    f.write(f"ADDRESS_RADIX=HEX;\n")
-                    f.write(f"DATA_RADIX=HEX;\n\n")
-                    f.write(f"CONTENT BEGIN\n")
-                    for addr, val in enumerate(raw_values):
-                        f.write(f"    {addr:X} : {val:X};\n")
-                    f.write(f"END;\n")
+                    if is_hex:
+                        f.write(f"WIDTH={width};\n")
+                        f.write(f"DEPTH={depth};\n\n")
+                        f.write(f"ADDRESS_RADIX=HEX;\n")
+                        f.write(f"DATA_RADIX=HEX;\n\n")
+                        f.write(f"CONTENT BEGIN\n")
+                        for addr, val in enumerate(raw_values):
+                            f.write(f"    {addr:X} : {val:X};\n")
+                        f.write(f"END;\n")
+                    else:
+                        # Exact format of photo_11.mif (ADDRESS_RADIX=UNS; DATA_RADIX=BIN;)
+                        f.write(f"WIDTH={width};\n")
+                        f.write(f"DEPTH={depth};\n\n")
+                        f.write(f"ADDRESS_RADIX=UNS;\n")
+                        f.write(f"DATA_RADIX=BIN;\n\n")
+                        f.write(f"CONTENT BEGIN\n")
+                        fmt = f"{{}} : {{:0{width}b}};\n"
+                        for addr, val in enumerate(raw_values):
+                            f.write(fmt.format(addr, val))
+                        f.write(f"END;\n")
                 messagebox.showinfo(self.tr("msg_success"), self.tr("msg_saved_mif").format(count=depth, path=out_path))
             except Exception as e:
                 messagebox.showerror(self.tr("msg_error"), f"{e}")
@@ -1279,12 +1314,13 @@ class VGAImageToolApp(tk.Tk):
         filenames = filedialog.askopenfilenames(
             title=self.tr("dialog_open_viewer"),
             filetypes=[
-                ("All Supported Files", "*.bmp *.ppm *.png *.jpg *.jpeg *.gif *.tif *.webp *.mem"),
+                ("All Supported Files", "*.bmp *.ppm *.png *.jpg *.jpeg *.gif *.tif *.webp *.mem *.mif"),
                 ("BMP Files", "*.bmp"),
                 ("PNG Files", "*.png"),
                 ("JPEG Files", "*.jpg *.jpeg"),
                 ("PPM Files", "*.ppm"),
                 ("MEM Binary Files", "*.mem"),
+                ("Quartus MIF Files", "*.mif"),
                 ("All Files", "*.*")
             ]
         )
@@ -1294,7 +1330,7 @@ class VGAImageToolApp(tk.Tk):
     def _on_open_folder(self):
         dirname = filedialog.askdirectory(title=self.tr("dialog_open_dir"))
         if dirname and os.path.isdir(dirname):
-            valid_exts = {".bmp", ".ppm", ".png", ".jpg", ".jpeg", ".gif", ".tif", ".webp", ".mem"}
+            valid_exts = {".bmp", ".ppm", ".png", ".jpg", ".jpeg", ".gif", ".tif", ".webp", ".mem", ".mif"}
             found = []
             for fname in sorted(os.listdir(dirname)):
                 ext = os.path.splitext(fname)[1].lower()
@@ -1364,14 +1400,47 @@ class VGAImageToolApp(tk.Tk):
             import datetime
             mtime_str = datetime.datetime.fromtimestamp(mtime_epoch).strftime("%Y-%m-%d %H:%M")
 
-            if filepath.lower().endswith(".mem"):
-                with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-                    lines = [line.strip() for line in f if line.strip() and not line.strip().startswith("//")]
-                if not lines:
-                    raise ValueError("الملف فارغ أو لا يحتوي على بيانات صالحة")
+            if filepath.lower().endswith((".mem", ".mif")):
+                if filepath.lower().endswith(".mem"):
+                    with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                        lines = [line.strip() for line in f if line.strip() and not line.strip().startswith("//")]
+                    if not lines:
+                        raise ValueError("الملف فارغ أو لا يحتوي على بيانات صالحة")
+                    bits = len(lines[0])
+                    vals = [int(tok, 2) for tok in lines if all(c in '01' for c in tok)]
+                    mode_str = f"MEM Binary ({bits}-bit)"
+                else:
+                    # Quartus MIF file loader
+                    width = 3
+                    data_radix = "BIN"
+                    in_content = False
+                    vals = []
+                    with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                        for line in f:
+                            clean = line.strip()
+                            if not clean or clean.startswith("--"):
+                                continue
+                            if clean.upper().startswith("WIDTH"):
+                                width = int(clean.split("=")[1].replace(";", "").strip())
+                            elif clean.upper().startswith("DATA_RADIX"):
+                                data_radix = clean.split("=")[1].replace(";", "").strip().upper()
+                            elif "CONTENT BEGIN" in clean.upper():
+                                in_content = True
+                            elif "END;" in clean.upper():
+                                in_content = False
+                            elif in_content and ":" in clean:
+                                parts = clean.split(":")
+                                val_str = parts[1].replace(";", "").strip()
+                                if data_radix == "BIN":
+                                    vals.append(int(val_str, 2))
+                                elif data_radix in ("HEX", "HEXADECIMAL"):
+                                    vals.append(int(val_str, 16))
+                                else:
+                                    vals.append(int(val_str, 10))
+                    bits = width
+                    mode_str = f"Quartus MIF ({bits}-bit, {data_radix})"
 
-                bits = len(lines[0])
-                total_pixels = len(lines)
+                total_pixels = len(vals)
                 if total_pixels == 640 * 480:
                     w, h = 640, 480
                 elif total_pixels == 320 * 240:
@@ -1396,29 +1465,25 @@ class VGAImageToolApp(tk.Tk):
 
                 img = Image.new("RGB", (w, h))
                 pix = img.load()
-                for i, line in enumerate(lines[:w * h]):
+                for i, val in enumerate(vals[:w * h]):
                     x = i % w
                     y = i // w
                     if bits == 3:
-                        r = 255 if line[0] == '1' else 0
-                        g = 255 if line[1] == '1' else 0
-                        b = 255 if line[2] == '1' else 0
+                        r = 255 if (val & 4) else 0
+                        g = 255 if (val & 2) else 0
+                        b = 255 if (val & 1) else 0
                     elif bits == 8:
-                        val = int(line, 2)
                         r = ((val >> 5) & 0x7) * 255 // 7
                         g = ((val >> 2) & 0x7) * 255 // 7
                         b = (val & 0x3) * 255 // 3
                     elif bits == 12:
-                        val = int(line, 2)
                         r = ((val >> 8) & 0xF) * 255 // 15
                         g = ((val >> 4) & 0xF) * 255 // 15
                         b = (val & 0xF) * 255 // 15
                     else:
-                        val = int(line, 2) if all(c in '01' for c in line) else 0
                         r = g = b = 255 if val else 0
                     pix[x, y] = (r, g, b)
                 self.view_loaded_img = img
-                mode_str = f"MEM Binary ({bits}-bit)"
             else:
                 self.view_loaded_img = Image.open(filepath).convert("RGB")
                 mode_str = "RGB (24-bit TrueColor)"

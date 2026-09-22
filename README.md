@@ -226,7 +226,7 @@ The following captures are actual pixel-accurate frames simulated in Questa/Mode
 
 |        Mode 8: Composite Shape        |       Mode 9: B&W Target Rings        |          Mode 10: Color Rings          |       Mode 11: Real ROM (ENIAC)        |
 | :-----------------------------------: | :-----------------------------------: | :------------------------------------: | :------------------------------------: |
-| ![Mode 8](photos/renders/mode_08.png) | ![Mode 9](photos/renders/mode_09.png) | ![Mode 10](photos/renders/mode_10.png) | 
+| ![Mode 8](photos/renders/mode_08.png) | ![Mode 9](photos/renders/mode_09.png) | ![Mode 10](photos/renders/mode_10.png) | ![Mode 11](photos/renders/mode_11.png) |
 
 | Mode 12: Hardware Digital Clock (`HH:MM:SS`) |
 | :------------------------------------------: |

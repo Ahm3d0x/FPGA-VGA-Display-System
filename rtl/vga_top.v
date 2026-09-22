@@ -10,13 +10,21 @@ module vga_top (
     output wire       vsync
 );
 
-    wire [9:0] pixel_x;
-    wire [9:0] pixel_y;
-    wire       video_on;
-    
+    wire        clk_25;
+    wire [9:0]  pixel_x;
+    wire [9:0]  pixel_y;
+    wire        video_on;
+
+
+    // 50 MHz -> 25 MHz
+    pll_25mhz pll_inst (
+        .inclk0(clk),
+        .c0(clk_25)
+    );
+
 
     VGA_Sync async (
-        .clk(clk),
+        .clk(clk_25),
         .pixel_x(pixel_x),
         .pixel_y(pixel_y),
         .video_on(video_on),
@@ -24,8 +32,9 @@ module vga_top (
         .vsync(vsync)
     );
 
+
     rgb_renderer graphic (
-        .clk(clk),
+        .clk(clk_25),
         .pixel_x(pixel_x),
         .pixel_y(pixel_y),
         .shape_form(shape_form),

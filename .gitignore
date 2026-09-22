@@ -23,3 +23,5 @@ quartus/incremental_db/
 quartus/output_files/
 quartus/simulation/
 *.qws
+*.bak
+data/sim_cmd.txt

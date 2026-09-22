@@ -13,10 +13,15 @@ Enhanced tool with:
 
 import os
 import sys
+import time
 import math
+import threading
+import subprocess
+import datetime
+import queue
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from PIL import Image, ImageTk, ImageEnhance
+from PIL import Image, ImageTk, ImageEnhance, ImageDraw
 
 # -----------------------------------------------------------------------------
 # Localization / Strings Dictionary
@@ -118,6 +123,37 @@ STRINGS = {
         "dialog_open_img": "اختر صورة لتحويلها",
         "dialog_open_viewer": "اختر صوراً لعرضها",
         "dialog_open_dir": "اختر مجلداً يحتوي على صور",
+        # Simulator & Live Controller
+        "tab_sim": "  ⚡ محاكي ومُتحكم VGA المباشر  ",
+        "sec_sim_controls": "لوحة الأنماط والمحاكاة التفاعلية",
+        "lbl_total_shapes": "إجمالي عدد الأنماط:",
+        "lbl_select_shape": "النمط المختار:",
+        "shape_name_fmt": "Shape {idx}",
+        "lbl_sim_duration": "⏱️ مدة تشغيل المحاكاة (بالثواني):",
+        "duration_hint": "0 = مستمر حتى الإيقاف",
+        "preset_5s": "5 ثوانٍ",
+        "preset_10s": "10 ثوانٍ",
+        "preset_30s": "30 ثانية",
+        "preset_60s": "60 ثانية",
+        "preset_cont": "∞ مستمر",
+        "sec_modelsim_run": "⚙️ التحكم في تشغيل المحاكاة ورسم البكسلات",
+        "lbl_scan_speed": "سرعة مسح البكسلات:",
+        "speed_fast": "⚡ فائق السرعة",
+        "speed_medium": "🚀 مسح VGA متوازن",
+        "speed_detail": "🔍 دقيق بيكسل ببيكسل",
+        "btn_start_sim": "🚀 بدء المحاكاة المباشرة",
+        "btn_stop_sim": "⏹ إيقاف المحاكاة",
+        "btn_preview_scan": "▶ إعادة رسم البكسلات حياً",
+        "modelsim_status_idle": "جاهز لتشغيل المحاكاة المباشرة",
+        "modelsim_status_running": "جاري تشغيل محاكاة ModelSim في الخلفية...",
+        "modelsim_status_live_countdown": "🟢 المحاكاة تعمل مباشرة... [المتبقي: {rem} ثانية | المنقضي: {elapsed} ث]",
+        "modelsim_status_live_continuous": "🟢 المحاكاة تعمل باستمرار... [المنقضي: {elapsed} ث]",
+        "modelsim_status_scanning": "⚡ مسح بيكسل ببيكسل: X={x}, Y={y} ({pct}%)",
+        "modelsim_status_stopped": "⏹ اكتملت جلسة المحاكاة بنجاح ({elapsed} ثانية)",
+        "modelsim_status_err": "حدث خطأ أثناء تشغيل محاكاة ModelSim!",
+        "sec_sim_display": "شاشة العرض المباشرة (VGA 640x480)",
+        "sim_status_bar": "النمط: Shape {shape} | البيكسل الحالي: X={x}, Y={y} | دقة الشاشة: 640x480 VGA",
+        "sim_shape_switched": "🔄 تم التبديل المباشر للنمط إلى Shape {shape}",
     },
     "en": {
         "app_title": "FPGA VGA Image Converter & Multi-Image Viewer",
@@ -215,8 +251,225 @@ STRINGS = {
         "dialog_open_img": "Select Image for Conversion",
         "dialog_open_viewer": "Select Images to View",
         "dialog_open_dir": "Select Directory Containing Images",
+        # Simulator & Live Controller
+        "tab_sim": "  ⚡ VGA Live Controller & Simulator  ",
+        "sec_sim_controls": "Universal Shapes & Interactive Simulation",
+        "lbl_total_shapes": "Total Shapes Count:",
+        "lbl_select_shape": "Selected Shape:",
+        "shape_name_fmt": "Shape {idx}",
+        "lbl_sim_duration": "⏱️ Simulation Duration (seconds):",
+        "duration_hint": "0 = Continuous until stopped",
+        "preset_5s": "5s",
+        "preset_10s": "10s",
+        "preset_30s": "30s",
+        "preset_60s": "60s",
+        "preset_cont": "∞ Continuous",
+        "sec_modelsim_run": "⚙️ Simulation Controls & Pixel Scanning",
+        "lbl_scan_speed": "Pixel Scan Speed:",
+        "speed_fast": "⚡ Ultra Fast Scan",
+        "speed_medium": "🚀 Smooth VGA Scan",
+        "speed_detail": "🔍 Detailed Pixel Scan",
+        "btn_start_sim": "🚀 Start Live Simulation",
+        "btn_stop_sim": "⏹ Stop Simulation",
+        "btn_preview_scan": "▶ Replay Pixel-by-Pixel Draw",
+        "modelsim_status_idle": "Ready to launch interactive live simulation",
+        "modelsim_status_running": "Running ModelSim simulation in background...",
+        "modelsim_status_live_countdown": "🟢 Simulation Running Live... [Remaining: {rem}s | Elapsed: {elapsed}s]",
+        "modelsim_status_live_continuous": "🟢 Continuous Simulation Active... [Elapsed: {elapsed}s]",
+        "modelsim_status_scanning": "⚡ Pixel-by-Pixel Scan: X={x}, Y={y} ({pct}%)",
+        "modelsim_status_stopped": "⏹ Simulation session completed ({elapsed}s)",
+        "modelsim_status_err": "Error running ModelSim simulation!",
+        "sec_sim_display": "Live Display Canvas (640x480 VGA)",
+        "sim_status_bar": "Shape: Shape {shape} | Current Pixel: X={x}, Y={y} | Display: 640x480 VGA",
+        "sim_shape_switched": "🔄 Dynamically switched to Shape {shape}",
     }
 }
+
+
+# -----------------------------------------------------------------------------
+# Pixel-Accurate RTL Software Emulator for Live Preview
+# -----------------------------------------------------------------------------
+def render_vga_shape(shape_id, hours=0, minutes=0, seconds=0, rom_image=None):
+    """
+    RTL output generator:
+    Prioritizes real hardware simulation output from ModelSim (photo_{shape_id}.ppm).
+    If found, loads and returns the real hardware image directly.
+    Otherwise, provides pixel-accurate emulation fallback.
+    """
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    ppm_path = os.path.join(root_dir, "data", "out", f"photo_{shape_id}.ppm")
+    if os.path.exists(ppm_path):
+        try:
+            return Image.open(ppm_path).convert("RGB")
+        except Exception:
+            pass
+
+    img = Image.new("RGB", (640, 480), (0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    if shape_id == 0:
+        # White rect 220..420, 150..300
+        draw.rectangle([220, 150, 420, 300], fill=(255, 255, 255))
+    elif shape_id == 1:
+        # Cyan rect
+        draw.rectangle([220, 150, 420, 300], fill=(0, 255, 255))
+    elif shape_id == 2:
+        # Blue rect
+        draw.rectangle([220, 150, 420, 300], fill=(0, 0, 255))
+    elif shape_id == 3:
+        # Yellow rect
+        draw.rectangle([220, 150, 420, 300], fill=(255, 255, 0))
+    elif shape_id == 4:
+        bars = [
+            (0, 79, (0, 0, 255)),
+            (80, 159, (0, 255, 0)),
+            (160, 239, (0, 255, 255)),
+            (240, 319, (255, 0, 0)),
+            (320, 399, (255, 0, 255)),
+            (400, 479, (255, 255, 0)),
+            (480, 559, (255, 255, 255)),
+            (560, 639, (0, 0, 0)),
+        ]
+        for x1, x2, col in bars:
+            draw.rectangle([x1, 0, x2, 479], fill=col)
+    elif shape_id == 5:
+        bars = [
+            (0, 59, (0, 0, 255)),
+            (60, 119, (0, 255, 0)),
+            (120, 179, (0, 255, 255)),
+            (180, 239, (255, 0, 0)),
+            (240, 299, (255, 0, 255)),
+            (300, 359, (255, 255, 0)),
+            (360, 419, (255, 255, 255)),
+            (420, 479, (0, 0, 0)),
+        ]
+        for y1, y2, col in bars:
+            draw.rectangle([0, y1, 639, y2], fill=col)
+    elif shape_id == 6:
+        # White circle r=100 (r^2 <= 10000)
+        draw.ellipse([320 - 100, 240 - 100, 320 + 100, 240 + 100], fill=(255, 255, 255))
+    elif shape_id == 7:
+        # Blue circle on White background
+        draw.rectangle([0, 0, 639, 479], fill=(255, 255, 255))
+        draw.ellipse([320 - 150, 240 - 150, 320 + 150, 240 + 150], fill=(0, 0, 255))
+    elif shape_id == 8:
+        # Blue circle, white rect
+        draw.rectangle([220, 165, 420, 315], fill=(255, 255, 255))
+        draw.ellipse([320 - 150, 240 - 150, 320 + 150, 240 + 150], fill=(0, 0, 255))
+    elif shape_id == 9:
+        rings = [
+            (40000, (255, 255, 255)),
+            (36000, (0, 0, 0)),
+            (32000, (255, 255, 255)),
+            (28000, (0, 0, 0)),
+            (24000, (255, 255, 255)),
+            (20000, (255, 255, 255)),
+            (16000, (0, 0, 0)),
+            (12000, (255, 255, 255)),
+            (8000, (0, 0, 0)),
+            (4000, (255, 255, 255)),
+        ]
+        for r2, col in rings:
+            r = int(math.isqrt(r2))
+            draw.ellipse([320 - r, 240 - r, 320 + r, 240 + r], fill=col)
+    elif shape_id == 10:
+        draw.rectangle([0, 0, 639, 479], fill=(255, 255, 255))
+        c_rings = [
+            (56000, (255, 255, 0)),
+            (48000, (255, 0, 255)),
+            (40000, (255, 0, 0)),
+            (32000, (0, 255, 255)),
+            (24000, (0, 255, 0)),
+            (16000, (0, 0, 255)),
+            (8000,  (0, 0, 0)),
+        ]
+        for r2, col in c_rings:
+            r = int(math.isqrt(r2))
+            draw.ellipse([320 - r, 240 - r, 320 + r, 240 + r], fill=col)
+    elif shape_id == 11:
+        if rom_image:
+            res = rom_image.resize((640, 480), Image.Resampling.NEAREST)
+            img.paste(res, (0, 0))
+        else:
+            draw.rectangle([120, 160, 520, 320], fill=(20, 40, 60))
+            draw.text((200, 220), "Image ROM: Convert or load an image in Tab 1", fill=(255, 255, 255))
+    elif shape_id == 12:
+        def draw_digit(x_pos, y_pos, digit):
+            seg_table = {
+                0: (1, 1, 1, 1, 1, 1, 0),
+                1: (0, 1, 1, 0, 0, 0, 0),
+                2: (1, 1, 0, 1, 1, 0, 1),
+                3: (1, 1, 1, 1, 0, 0, 1),
+                4: (0, 1, 1, 0, 0, 1, 1),
+                5: (1, 0, 1, 1, 0, 1, 1),
+                6: (1, 0, 1, 1, 1, 1, 1),
+                7: (1, 1, 1, 0, 0, 0, 0),
+                8: (1, 1, 1, 1, 1, 1, 1),
+                9: (1, 1, 1, 1, 0, 1, 1),
+            }
+            segs = seg_table.get(digit, (0, 0, 0, 0, 0, 0, 0))
+            cyan = (0, 255, 255)
+            # DIGIT_W = 50, DIGIT_H = 90, THICK = 10
+            # Matches clock_renderer.v exactly:
+            if segs[0]:  # a (local_y < THICK && local_x < DIGIT_W)
+                draw.rectangle([x_pos, y_pos, x_pos + 50 - 1, y_pos + 10 - 1], fill=cyan)
+            if segs[1]:  # b (local_x >= DIGIT_W-THICK && local_y < DIGIT_H/2 + THICK/2)
+                draw.rectangle([x_pos + 40, y_pos, x_pos + 50 - 1, y_pos + 50 - 1], fill=cyan)
+            if segs[2]:  # c (local_x >= DIGIT_W-THICK && local_y >= DIGIT_H/2 - THICK/2 && local_y < DIGIT_H)
+                draw.rectangle([x_pos + 40, y_pos + 40, x_pos + 50 - 1, y_pos + 90 - 1], fill=cyan)
+            if segs[3]:  # d (local_y >= DIGIT_H-THICK && local_x < DIGIT_W)
+                draw.rectangle([x_pos, y_pos + 80, x_pos + 50 - 1, y_pos + 90 - 1], fill=cyan)
+            if segs[4]:  # e (local_x < THICK && local_y >= DIGIT_H/2 - THICK/2 && local_y < DIGIT_H)
+                draw.rectangle([x_pos, y_pos + 40, x_pos + 10 - 1, y_pos + 90 - 1], fill=cyan)
+            if segs[5]:  # f (local_x < THICK && local_y < DIGIT_H/2 + THICK/2)
+                draw.rectangle([x_pos, y_pos, x_pos + 10 - 1, y_pos + 50 - 1], fill=cyan)
+            if segs[6]:  # g (local_y in [DIGIT_H/2 - THICK/2 .. DIGIT_H/2 + THICK/2] && local_x < DIGIT_W)
+                draw.rectangle([x_pos, y_pos + 40, x_pos + 50 - 1, y_pos + 50 - 1], fill=cyan)
+
+        y0 = 195
+        # hours
+        draw_digit(120, y0, (hours // 10) % 10)
+        draw_digit(180, y0, hours % 10)
+        # minutes
+        draw_digit(260, y0, (minutes // 10) % 10)
+        draw_digit(320, y0, minutes % 10)
+        # seconds
+        s_ones = seconds % 10
+        draw_digit(400, y0, (seconds // 10) % 10)
+        draw_digit(460, y0, s_ones)
+
+        # Colons blink on even seconds (seconds_ones[0] == 0)
+        if (s_ones % 2) == 0:
+            cyan = (0, 255, 255)
+            # Colon 1 at X=238
+            draw.rectangle([238, y0 + 25, 238 + 14 - 1, y0 + 38 - 1], fill=cyan)
+            draw.rectangle([238, y0 + 52, 238 + 14 - 1, y0 + 65 - 1], fill=cyan)
+            # Colon 2 at X=378
+            draw.rectangle([378, y0 + 25, 378 + 14 - 1, y0 + 38 - 1], fill=cyan)
+            draw.rectangle([378, y0 + 52, 378 + 14 - 1, y0 + 65 - 1], fill=cyan)
+
+    elif shape_id > 12:
+        # Check if ModelSim generated PPM exists for this shape
+        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        ppm_path = os.path.join(root_dir, "data", "out", f"photo_{shape_id}.ppm")
+        if os.path.exists(ppm_path):
+            try:
+                loaded = Image.open(ppm_path).convert("RGB")
+                img.paste(loaded, (0, 0))
+                return img
+            except Exception:
+                pass
+        # Clean custom shape placeholder
+        draw.rectangle([0, 0, 639, 479], fill=(15, 18, 24))
+        for gx in range(0, 640, 40):
+            draw.line([(gx, 0), (gx, 479)], fill=(28, 35, 45), width=1)
+        for gy in range(0, 480, 40):
+            draw.line([(0, gy), (639, gy)], fill=(28, 35, 45), width=1)
+        draw.rectangle([120, 170, 520, 310], fill=(22, 30, 45), outline=(0, 200, 255), width=2)
+        draw.text((160, 205), f"Shape {shape_id} - Custom RTL Mode", fill=(0, 255, 255))
+        draw.text((140, 245), "Click 'Run Simulation & Live Scan' to simulate", fill=(170, 190, 210))
+
+    return img
 
 
 class VGAImageToolApp(tk.Tk):
@@ -272,6 +525,33 @@ class VGAImageToolApp(tk.Tk):
         self.view_tk_img = None
         self.view_zoom = 1.0
 
+        # ---------------------------------------------------------------------
+        # State Variables - Simulator & Live Controller
+        # ---------------------------------------------------------------------
+        self.sim_total_shapes_var = tk.IntVar(value=13)
+        self.sim_shape_var = tk.IntVar(value=0)
+        self.sim_duration_var = tk.IntVar(value=10)
+        self.sim_scan_speed_var = tk.StringVar(value="medium")
+        self.sim_current_img = None
+        self.sim_scan_buffer = None
+        self.sim_pixel_x = 0
+        self.sim_pixel_y = 0
+        self.sim_is_scanning = False
+        self.sim_scan_timer = None
+        self.sim_tk_img = None
+        self.sim_is_live = False
+        self.sim_elapsed_seconds = 0
+        self.sim_clock_seconds = 0
+        self.sim_clock_minutes = 0
+        self.sim_clock_hours = 0
+        self.sim_live_timer = None
+        self.sim_modelsim_proc = None
+        self.sim_is_running_modelsim = False
+
+        # Thread-safe worker queue for background processes (e.g. ModelSim)
+        self._worker_queue = queue.Queue()
+        self._check_worker_queue()
+
         # Build UI layout
         self._build_top_header()
         self._build_ui()
@@ -324,6 +604,11 @@ class VGAImageToolApp(tk.Tk):
         self.viewer_tab = ttk.Frame(self.notebook)
         self.notebook.add(self.viewer_tab, text=self.tr("tab_viewer"))
         self._build_viewer_tab(self.viewer_tab)
+
+        # Tab 3: Simulator & Live Controller
+        self.sim_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.sim_tab, text=self.tr("tab_sim"))
+        self._build_sim_tab(self.sim_tab)
 
         # Global Keyboard Navigation
         self.bind("<Left>", self._on_key_nav)
@@ -680,6 +965,7 @@ class VGAImageToolApp(tk.Tk):
         # Notebook tabs
         self.notebook.tab(0, text=self.tr("tab_converter"))
         self.notebook.tab(1, text=self.tr("tab_viewer"))
+        self.notebook.tab(2, text=self.tr("tab_sim"))
 
         # Converter Left Panel
         self.lbl_step1.config(text=self.tr("step_select_image"))
@@ -792,6 +1078,26 @@ class VGAImageToolApp(tk.Tk):
 
         self._update_viewer_counter()
         self._update_converter_preview()
+
+        # Simulator & Live Controller Panel
+        if hasattr(self, "sim_group_shape"):
+            self.sim_group_shape.config(text=self.tr("sec_sim_controls"))
+            self.lbl_total_shapes.config(text=self.tr("lbl_total_shapes"))
+            self.lbl_sim_shape.config(text=self.tr("lbl_select_shape"))
+            self.sim_group_modelsim.config(text=self.tr("sec_modelsim_run"))
+            if hasattr(self, "lbl_sim_duration"):
+                self.lbl_sim_duration.config(text=self.tr("lbl_sim_duration"))
+            if hasattr(self, "duration_preset_btns"):
+                for key, btn in self.duration_preset_btns.items():
+                    btn.config(text=self.tr(key))
+            self.lbl_scan_speed.config(text=self.tr("lbl_scan_speed"))
+            self.btn_start_sim.config(text=self.tr("btn_start_sim"))
+            self.btn_stop_sim.config(text=self.tr("btn_stop_sim"))
+            self.btn_preview_scan.config(text=self.tr("btn_preview_scan"))
+            self.lbl_disp_title.config(text=self.tr("sec_sim_display"))
+
+            self._refresh_sim_shapes_list()
+            self._render_sim_view()
 
     # -------------------------------------------------------------------------
     # Converter Logic & Interactive Cropping Engine
@@ -1595,6 +1901,694 @@ class VGAImageToolApp(tk.Tk):
     def _on_viewer_mousewheel(self, event):
         factor = 1.15 if event.delta > 0 else 0.85
         self._zoom_viewer(factor)
+
+    # -------------------------------------------------------------------------
+    # Tab 3: Simulator & Live Controller UI and Logic
+    # -------------------------------------------------------------------------
+    def _build_sim_tab(self, parent):
+        paned = ttk.PanedWindow(parent, orient=tk.HORIZONTAL)
+        paned.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
+
+        # -------------------------------------------------------------
+        # Left Panel: Controls with Scrollbar
+        # -------------------------------------------------------------
+        left_container = ttk.Frame(paned)
+        paned.add(left_container, weight=0)
+
+        left_canvas = tk.Canvas(left_container, width=370, highlightthickness=0)
+        left_sb = ttk.Scrollbar(left_container, orient=tk.VERTICAL, command=left_canvas.yview)
+        self.sim_ctrl_frame = ttk.Frame(left_canvas, padding=8)
+
+        self.sim_ctrl_frame.bind(
+            "<Configure>",
+            lambda e: left_canvas.configure(scrollregion=left_canvas.bbox("all"))
+        )
+        left_canvas.create_window((0, 0), window=self.sim_ctrl_frame, anchor="nw")
+        left_canvas.configure(yscrollcommand=left_sb.set)
+
+        left_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        left_sb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # 1. Universal Shapes Configuration Group
+        self.sim_group_shape = ttk.LabelFrame(self.sim_ctrl_frame, text=self.tr("sec_sim_controls"), padding=8)
+        self.sim_group_shape.pack(fill=tk.X, pady=(0, 8))
+
+        # Total Shapes Count
+        tot_frame = ttk.Frame(self.sim_group_shape)
+        tot_frame.pack(fill=tk.X, pady=(0, 4))
+        self.lbl_total_shapes = ttk.Label(tot_frame, text=self.tr("lbl_total_shapes"), font=("Segoe UI", 9))
+        self.lbl_total_shapes.pack(side=tk.LEFT, padx=2)
+        self.spn_total_shapes = ttk.Spinbox(
+            tot_frame, from_=1, to=256, width=6,
+            textvariable=self.sim_total_shapes_var,
+            command=self._on_total_shapes_change
+        )
+        self.spn_total_shapes.pack(side=tk.RIGHT, padx=2)
+        self.spn_total_shapes.bind("<KeyRelease>", lambda e: self._on_total_shapes_change())
+
+        # Select Shape (Spinbox + Combobox)
+        shape_sel_frame = ttk.Frame(self.sim_group_shape)
+        shape_sel_frame.pack(fill=tk.X, pady=4)
+        self.lbl_sim_shape = ttk.Label(shape_sel_frame, text=self.tr("lbl_select_shape"), font=("Segoe UI", 9, "bold"))
+        self.lbl_sim_shape.pack(side=tk.LEFT, padx=2)
+
+        self.spn_sim_shape = ttk.Spinbox(
+            shape_sel_frame, from_=0, to=self.sim_total_shapes_var.get() - 1, width=6,
+            textvariable=self.sim_shape_var,
+            command=self._on_sim_shape_spin
+        )
+        self.spn_sim_shape.pack(side=tk.RIGHT, padx=2)
+        self.spn_sim_shape.bind("<KeyRelease>", lambda e: self._on_sim_shape_spin())
+
+        self.sim_shape_cb = ttk.Combobox(self.sim_group_shape, state="readonly", font=("Segoe UI", 9))
+        self.sim_shape_cb.pack(fill=tk.X, pady=(2, 4))
+        self.sim_shape_cb.bind("<<ComboboxSelected>>", self._on_sim_shape_combo)
+        self._refresh_sim_shapes_list()
+
+        # 2. Simulation & Pixel-by-Pixel Scan Controls
+        self.sim_group_modelsim = ttk.LabelFrame(self.sim_ctrl_frame, text=self.tr("sec_modelsim_run"), padding=8)
+        self.sim_group_modelsim.pack(fill=tk.X, pady=(0, 8))
+
+        # Duration Row
+        dur_frame = ttk.Frame(self.sim_group_modelsim)
+        dur_frame.pack(fill=tk.X, pady=(0, 4))
+        self.lbl_sim_duration = ttk.Label(dur_frame, text=self.tr("lbl_sim_duration"), font=("Segoe UI", 9))
+        self.lbl_sim_duration.pack(side=tk.LEFT, padx=2)
+
+        self.spn_sim_duration = ttk.Spinbox(
+            dur_frame, from_=0, to=3600, width=6,
+            textvariable=self.sim_duration_var
+        )
+        self.spn_sim_duration.pack(side=tk.RIGHT, padx=2)
+
+        # Preset Buttons Row (5s, 10s, 30s, 60s, Continuous)
+        preset_frame = ttk.Frame(self.sim_group_modelsim)
+        preset_frame.pack(fill=tk.X, pady=(0, 6))
+        self.duration_preset_btns = {}
+        for key, s_val in [
+            ("preset_5s", 5),
+            ("preset_10s", 10),
+            ("preset_30s", 30),
+            ("preset_60s", 60),
+            ("preset_cont", 0)
+        ]:
+            b = ttk.Button(
+                preset_frame, text=self.tr(key), width=5,
+                command=lambda val=s_val: self._set_duration_preset(val)
+            )
+            b.pack(side=tk.LEFT, padx=1, expand=True, fill=tk.X)
+            self.duration_preset_btns[key] = b
+
+        # Speed selector
+        speed_frame = ttk.Frame(self.sim_group_modelsim)
+        speed_frame.pack(fill=tk.X, pady=(2, 6))
+        self.lbl_scan_speed = ttk.Label(speed_frame, text=self.tr("lbl_scan_speed"), font=("Segoe UI", 9))
+        self.lbl_scan_speed.pack(anchor="w", pady=(0, 2))
+
+        self.cb_scan_speed = ttk.Combobox(speed_frame, state="readonly", font=("Segoe UI", 9))
+        self.cb_scan_speed.pack(fill=tk.X)
+        self._update_speed_combobox_values()
+        self.cb_scan_speed.bind("<<ComboboxSelected>>", self._on_speed_changed)
+
+        # Action Buttons (Start Live Simulation / Stop Simulation)
+        btn_action_frame = ttk.Frame(self.sim_group_modelsim)
+        btn_action_frame.pack(fill=tk.X, pady=(4, 3))
+
+        self.btn_start_sim = tk.Button(
+            btn_action_frame,
+            text=self.tr("btn_start_sim"),
+            command=self._start_live_simulation,
+            bg="#007acc",
+            fg="#ffffff",
+            activebackground="#005999",
+            activeforeground="#ffffff",
+            font=("Segoe UI", 9, "bold"),
+            relief=tk.FLAT,
+            padx=8,
+            pady=4,
+            cursor="hand2"
+        )
+        self.btn_start_sim.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2))
+
+        self.btn_stop_sim = tk.Button(
+            btn_action_frame,
+            text=self.tr("btn_stop_sim"),
+            command=self._stop_live_simulation,
+            state="disabled",
+            bg="#cccccc",
+            fg="#ffffff",
+            activebackground="#c9302c",
+            activeforeground="#ffffff",
+            font=("Segoe UI", 9, "bold"),
+            relief=tk.FLAT,
+            padx=8,
+            pady=4,
+            cursor="arrow"
+        )
+        self.btn_stop_sim.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(2, 0))
+
+        self.btn_preview_scan = ttk.Button(
+            self.sim_group_modelsim,
+            text=self.tr("btn_preview_scan"),
+            command=self._replay_pixel_scan
+        )
+        self.btn_preview_scan.pack(fill=tk.X, pady=(3, 6))
+
+        # Progress bar
+        self.sim_progress = ttk.Progressbar(self.sim_group_modelsim, mode="determinate", maximum=100)
+        self.sim_progress.pack(fill=tk.X, pady=2)
+
+        self.lbl_modelsim_status = ttk.Label(
+            self.sim_group_modelsim,
+            text=self.tr("modelsim_status_idle"),
+            font=("Segoe UI", 8),
+            foreground="#444444"
+        )
+        self.lbl_modelsim_status.pack(anchor="w", pady=(2, 0))
+
+        # -------------------------------------------------------------
+        # Right Panel: Live Canvas Display
+        # -------------------------------------------------------------
+        right_container = ttk.Frame(paned, padding=4)
+        paned.add(right_container, weight=1)
+
+        disp_bar = ttk.Frame(right_container)
+        disp_bar.pack(fill=tk.X, pady=(0, 4))
+
+        self.lbl_disp_title = ttk.Label(
+            disp_bar,
+            text=self.tr("sec_sim_display"),
+            font=("Segoe UI", 10, "bold"),
+            foreground="#005a9e"
+        )
+        self.lbl_disp_title.pack(side=tk.LEFT, anchor=tk.CENTER)
+
+        canvas_border = tk.Frame(right_container, bg="#111111", padx=2, pady=2)
+        canvas_border.pack(fill=tk.BOTH, expand=True)
+
+        self.sim_canvas = tk.Canvas(canvas_border, bg="#000000", highlightthickness=0)
+        self.sim_canvas.pack(fill=tk.BOTH, expand=True)
+        self.sim_canvas.bind("<Configure>", lambda e: self._render_sim_view())
+
+        # Status Bar at Bottom
+        self.lbl_sim_status_bar = ttk.Label(
+            right_container,
+            text="",
+            font=("Segoe UI", 9),
+            anchor=tk.W
+        )
+        self.lbl_sim_status_bar.pack(fill=tk.X, pady=(4, 0))
+
+        self.after(100, self._render_sim_view)
+
+    def _update_speed_combobox_values(self):
+        speeds = [
+            self.tr("speed_fast"),
+            self.tr("speed_medium"),
+            self.tr("speed_detail")
+        ]
+        self.cb_scan_speed["values"] = speeds
+        cur = self.sim_scan_speed_var.get()
+        if cur == "fast":
+            self.cb_scan_speed.set(speeds[0])
+        elif cur == "detail":
+            self.cb_scan_speed.set(speeds[2])
+        else:
+            self.cb_scan_speed.set(speeds[1])
+
+    def _on_speed_changed(self, event=None):
+        val = self.cb_scan_speed.get()
+        if self.tr("speed_fast") in val:
+            self.sim_scan_speed_var.set("fast")
+        elif self.tr("speed_detail") in val:
+            self.sim_scan_speed_var.set("detail")
+        else:
+            self.sim_scan_speed_var.set("medium")
+
+    def _refresh_sim_shapes_list(self):
+        try:
+            total = max(1, self.sim_total_shapes_var.get())
+        except Exception:
+            total = 13
+        shape_items = [f"Shape {i}" for i in range(total)]
+        self.sim_shape_cb["values"] = shape_items
+        cur = self.sim_shape_var.get()
+        if cur >= total:
+            cur = total - 1
+            self.sim_shape_var.set(cur)
+        if hasattr(self, "spn_sim_shape"):
+            self.spn_sim_shape.config(to=max(0, total - 1))
+        if 0 <= cur < len(shape_items):
+            self.sim_shape_cb.set(shape_items[cur])
+        if hasattr(self, "cb_scan_speed"):
+            self._update_speed_combobox_values()
+
+    def _on_total_shapes_change(self):
+        self._refresh_sim_shapes_list()
+        self._render_sim_view()
+
+    def _on_sim_shape_combo(self, event=None):
+        val = self.sim_shape_cb.get()
+        try:
+            shape_id = int(val.replace("Shape", "").strip())
+            self.sim_shape_var.set(shape_id)
+        except Exception:
+            pass
+        self._on_shape_selected(self.sim_shape_var.get())
+
+    def _on_sim_shape_spin(self):
+        cur = self.sim_shape_var.get()
+        try:
+            total = max(1, self.sim_total_shapes_var.get())
+        except Exception:
+            total = 13
+        if cur >= total:
+            cur = total - 1
+            self.sim_shape_var.set(cur)
+        if cur < 0:
+            cur = 0
+            self.sim_shape_var.set(0)
+        shape_items = self.sim_shape_cb["values"]
+        if 0 <= cur < len(shape_items):
+            self.sim_shape_cb.set(shape_items[cur])
+        self._on_shape_selected(cur)
+
+    def _on_shape_selected(self, shape_id):
+        if self.sim_is_live:
+            self._write_sim_cmd_file(shape_id, stop=0)
+            self.lbl_modelsim_status.config(
+                text=self.tr("sim_shape_switched").format(shape=shape_id),
+                foreground="#0088cc"
+            )
+        self._render_sim_view()
+
+    def _render_sim_view(self):
+        if not hasattr(self, "sim_canvas") or self.sim_is_scanning:
+            return
+        c_w = max(self.sim_canvas.winfo_width(), 100)
+        c_h = max(self.sim_canvas.winfo_height(), 100)
+
+        shape = self.sim_shape_var.get()
+        rom_img = self.conv_processed_img or self.conv_original_img
+
+        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        ppm_path = os.path.join(root_dir, "data", "out", f"photo_{shape}.ppm")
+
+        if os.path.exists(ppm_path):
+            try:
+                img = Image.open(ppm_path).convert("RGB")
+                self.sim_current_img = img
+            except Exception:
+                img = render_vga_shape(
+                    shape,
+                    hours=self.sim_clock_hours,
+                    minutes=self.sim_clock_minutes,
+                    seconds=self.sim_clock_seconds,
+                    rom_image=rom_img
+                )
+                self.sim_current_img = img
+        elif self.sim_current_img is not None and shape > 12:
+            img = self.sim_current_img
+        else:
+            img = render_vga_shape(
+                shape,
+                hours=self.sim_clock_hours,
+                minutes=self.sim_clock_minutes,
+                seconds=self.sim_clock_seconds,
+                rom_image=rom_img
+            )
+            self.sim_current_img = img
+
+        aspect = 640.0 / 480.0
+        if c_w / c_h > aspect:
+            disp_h = c_h
+            disp_w = int(c_h * aspect)
+        else:
+            disp_w = c_w
+            disp_h = int(c_w / aspect)
+        disp_w = max(1, disp_w)
+        disp_h = max(1, disp_h)
+
+        scaled = img.resize((disp_w, disp_h), Image.Resampling.NEAREST)
+        self.sim_tk_img = ImageTk.PhotoImage(scaled)
+
+        self.sim_canvas.delete("all")
+        off_x = (c_w - disp_w) // 2
+        off_y = (c_h - disp_h) // 2
+        self.sim_canvas.create_image(off_x, off_y, anchor=tk.NW, image=self.sim_tk_img)
+
+        # Update status bar
+        self.lbl_sim_status_bar.config(
+            text=self.tr("sim_status_bar").format(
+                shape=shape,
+                x=self.sim_pixel_x,
+                y=self.sim_pixel_y
+            )
+        )
+
+    def _replay_pixel_scan(self):
+        shape = self.sim_shape_var.get()
+        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        ppm_path = os.path.join(root_dir, "data", "out", f"photo_{shape}.ppm")
+        if os.path.exists(ppm_path):
+            try:
+                target = Image.open(ppm_path).convert("RGB")
+            except Exception:
+                rom_img = self.conv_processed_img or self.conv_original_img
+                target = render_vga_shape(
+                    shape,
+                    hours=self.sim_clock_hours,
+                    minutes=self.sim_clock_minutes,
+                    seconds=self.sim_clock_seconds,
+                    rom_image=rom_img
+                )
+        else:
+            rom_img = self.conv_processed_img or self.conv_original_img
+            target = render_vga_shape(
+                shape,
+                hours=self.sim_clock_hours,
+                minutes=self.sim_clock_minutes,
+                seconds=self.sim_clock_seconds,
+                rom_image=rom_img
+            )
+        self._start_pixel_scan(target)
+
+    def _start_pixel_scan(self, target_img):
+        if self.sim_is_scanning and self.sim_scan_timer:
+            self.after_cancel(self.sim_scan_timer)
+            self.sim_scan_timer = None
+
+        self.sim_target_img = target_img.copy()
+        self.sim_scan_buffer = Image.new("RGB", (640, 480), (8, 10, 16))
+        self.sim_pixel_x = 0
+        self.sim_pixel_y = 0
+        self.sim_is_scanning = True
+        self.sim_progress.config(maximum=307200, value=0)
+        self._pixel_scan_step()
+
+    def _pixel_scan_step(self):
+        if not self.sim_is_scanning or not hasattr(self, "sim_canvas") or self.sim_target_img is None:
+            return
+
+        speed = self.sim_scan_speed_var.get()
+        if speed == "fast":
+            batch = 3840  # ~80 frames
+            delay = 10
+        elif speed == "detail":
+            batch = 320   # ~960 frames, fine pixel inspection
+            delay = 15
+        else:  # medium
+            batch = 1280  # ~240 frames, smooth visible scan
+            delay = 12
+
+        target_pixels = self.sim_target_img.load()
+        buffer_pixels = self.sim_scan_buffer.load()
+
+        x = self.sim_pixel_x
+        y = self.sim_pixel_y
+
+        for _ in range(batch):
+            buffer_pixels[x, y] = target_pixels[x, y]
+            x += 1
+            if x >= 640:
+                x = 0
+                y += 1
+                if y >= 480:
+                    break
+
+        self.sim_pixel_x = x
+        self.sim_pixel_y = y
+
+        total_pixels = y * 640 + x
+        pct = min(100, (total_pixels * 100) // 307200)
+        self.sim_progress.config(value=total_pixels)
+        self.lbl_modelsim_status.config(
+            text=self.tr("modelsim_status_scanning").format(x=x, y=min(479, y), pct=pct),
+            foreground="#0088cc"
+        )
+
+        self._draw_pixel_scan_canvas(self.sim_scan_buffer, x, y)
+
+        if y < 480:
+            self.sim_scan_timer = self.after(delay, self._pixel_scan_step)
+        else:
+            self.sim_is_scanning = False
+            self.sim_current_img = self.sim_target_img
+            self.sim_progress.config(value=307200)
+            self.lbl_modelsim_status.config(
+                text=self.tr("modelsim_status_done"),
+                foreground="#00aa00"
+            )
+            self._render_sim_view()
+
+    def _draw_pixel_scan_canvas(self, img, cur_x, cur_y):
+        if not hasattr(self, "sim_canvas"):
+            return
+        c_w = max(self.sim_canvas.winfo_width(), 100)
+        c_h = max(self.sim_canvas.winfo_height(), 100)
+
+        aspect = 640.0 / 480.0
+        if c_w / c_h > aspect:
+            disp_h = c_h
+            disp_w = int(c_h * aspect)
+        else:
+            disp_w = c_w
+            disp_h = int(c_w / aspect)
+        disp_w = max(1, disp_w)
+        disp_h = max(1, disp_h)
+
+        scaled = img.resize((disp_w, disp_h), Image.Resampling.NEAREST)
+        self.sim_tk_img = ImageTk.PhotoImage(scaled)
+
+        self.sim_canvas.delete("all")
+        off_x = (c_w - disp_w) // 2
+        off_y = (c_h - disp_h) // 2
+        self.sim_canvas.create_image(off_x, off_y, anchor=tk.NW, image=self.sim_tk_img)
+
+        # Draw glowing laser beam dot at current (pixel_x, pixel_y)
+        if cur_y < 480:
+            screen_x = off_x + int((cur_x / 640.0) * disp_w)
+            screen_y = off_y + int((cur_y / 480.0) * disp_h)
+
+            # Horizontal sweep line leading to beam dot
+            self.sim_canvas.create_line(off_x, screen_y, screen_x, screen_y, fill="#00e5ff", width=2)
+            # Glowing laser beam dot
+            r = 5
+            self.sim_canvas.create_oval(screen_x - r - 2, screen_y - r - 2, screen_x + r + 2, screen_y + r + 2, fill="#00ffff", outline="")
+            self.sim_canvas.create_oval(screen_x - r, screen_y - r, screen_x + r, screen_y + r, fill="#ffffff", outline="")
+
+        # Update status bar
+        self.lbl_sim_status_bar.config(
+            text=self.tr("sim_status_bar").format(
+                shape=self.sim_shape_var.get(),
+                x=cur_x,
+                y=min(479, cur_y)
+            )
+        )
+
+    def _set_duration_preset(self, seconds):
+        self.sim_duration_var.set(seconds)
+
+    def _write_sim_cmd_file(self, shape, stop=0):
+        try:
+            root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            cmd_path = os.path.join(root_dir, "data", "sim_cmd.txt")
+            os.makedirs(os.path.dirname(cmd_path), exist_ok=True)
+            with open(cmd_path, "w", encoding="utf-8") as f:
+                f.write(f"{shape} {stop}\n")
+        except Exception:
+            pass
+
+    def _start_live_simulation(self):
+        if self.sim_is_live:
+            return
+
+        self.sim_is_live = True
+        self.btn_start_sim.config(state="disabled", bg="#cccccc", cursor="arrow")
+        self.btn_stop_sim.config(state="normal", bg="#d9534f", cursor="hand2")
+
+        try:
+            duration = max(0, self.sim_duration_var.get())
+        except Exception:
+            duration = 10
+            self.sim_duration_var.set(10)
+
+        shape = self.sim_shape_var.get()
+        self.sim_elapsed_seconds = 0
+        self.sim_clock_seconds = 0
+        self.sim_clock_minutes = 0
+        self.sim_clock_hours = 0
+
+        self._write_sim_cmd_file(shape, stop=0)
+
+        # Launch ModelSim in background with auto-recompile
+        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        build_dir = os.path.join(root_dir, "build")
+
+        def modelsim_worker():
+            try:
+                # 1. Recompile RTL + testbench so user modifications in Verilog take immediate effect
+                vlog_cmd = [
+                    "vlog", "-sv", "-work", "work",
+                    "../rtl/image_rom.v", "../rtl/vga_core.v", "../rtl/rgb_renderer.v",
+                    "../rtl/time_counter.v", "../rtl/clock_renderer.v",
+                    "../tb/vga_live_sim_tb.v"
+                ]
+                subprocess.run(
+                    vlog_cmd,
+                    cwd=build_dir,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True
+                )
+
+                # 2. Run Questa / ModelSim simulation
+                vsim_cmd = [
+                    "vsim", "-c", "-L", "altera_mf_ver",
+                    "-do", "run -all; quit -f",
+                    "work.vga_live_sim_tb",
+                    f"+SHAPE={shape}",
+                    f"+DURATION={duration}"
+                ]
+                proc = subprocess.Popen(
+                    vsim_cmd,
+                    cwd=build_dir,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True
+                )
+                self.sim_modelsim_proc = proc
+
+                ppm_path = os.path.join(root_dir, "data", "out", f"photo_{shape}.ppm")
+                last_mtime = os.path.getmtime(ppm_path) if os.path.exists(ppm_path) else 0
+
+                # Monitor PPM generation while simulation runs
+                while proc.poll() is None:
+                    time.sleep(0.4)
+                    if os.path.exists(ppm_path) and os.path.getsize(ppm_path) >= 1000000:
+                        mtime = os.path.getmtime(ppm_path)
+                        if mtime > last_mtime:
+                            last_mtime = mtime
+                            try:
+                                loaded_img = Image.open(ppm_path).convert("RGB")
+                                self._worker_queue.put(lambda img=loaded_img: self._on_modelsim_frame_ready(img))
+                            except Exception:
+                                pass
+
+                # Simulation finished: load final generated PPM
+                if os.path.exists(ppm_path) and os.path.getsize(ppm_path) >= 1000000:
+                    try:
+                        loaded_img = Image.open(ppm_path).convert("RGB")
+                        self._worker_queue.put(lambda img=loaded_img: self._on_modelsim_frame_ready(img))
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            finally:
+                self.sim_modelsim_proc = None
+
+        threading.Thread(target=modelsim_worker, daemon=True).start()
+
+        # Render first frame and launch initial pixel-by-pixel scan
+        rom_img = self.conv_processed_img or self.conv_original_img
+        first_frame = render_vga_shape(shape, hours=0, minutes=0, seconds=0, rom_image=rom_img)
+        self._start_pixel_scan(first_frame)
+
+        # Start live ticking loop
+        self.sim_live_timer = self.after(1000, self._live_sim_tick)
+
+    def _on_modelsim_frame_ready(self, img):
+        self.sim_current_img = img
+        if self.sim_is_scanning:
+            self.sim_target_img = img.copy()
+        else:
+            self._render_sim_view()
+
+    def _live_sim_tick(self):
+        if not self.sim_is_live:
+            return
+
+        try:
+            duration = max(0, self.sim_duration_var.get())
+        except Exception:
+            duration = 10
+
+        self.sim_elapsed_seconds += 1
+        shape = self.sim_shape_var.get()
+
+        if duration > 0:
+            rem = max(0, duration - self.sim_elapsed_seconds)
+            self.lbl_modelsim_status.config(
+                text=self.tr("modelsim_status_live_countdown").format(rem=rem, elapsed=self.sim_elapsed_seconds),
+                foreground="#0088cc"
+            )
+            pct = min(100, (self.sim_elapsed_seconds * 100) // duration)
+            self.sim_progress.config(maximum=100, value=pct)
+
+            if self.sim_elapsed_seconds >= duration:
+                self._stop_live_simulation()
+                return
+        else:
+            self.lbl_modelsim_status.config(
+                text=self.tr("modelsim_status_live_continuous").format(elapsed=self.sim_elapsed_seconds),
+                foreground="#0088cc"
+            )
+
+        # In clock mode, reload ModelSim simulated hardware PPM or advance naturally
+        if shape >= 12:
+            root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            ppm_path = os.path.join(root_dir, "data", "out", f"photo_{shape}.ppm")
+            if os.path.exists(ppm_path) and os.path.getsize(ppm_path) >= 1000000:
+                try:
+                    self.sim_current_img = Image.open(ppm_path).convert("RGB")
+                except Exception:
+                    pass
+            self.sim_clock_seconds = (self.sim_clock_seconds + 1) % 60
+            if self.sim_clock_seconds == 0:
+                self.sim_clock_minutes = (self.sim_clock_minutes + 1) % 60
+                if self.sim_clock_minutes == 0:
+                    self.sim_clock_hours = (self.sim_clock_hours + 1) % 24
+            if not self.sim_is_scanning:
+                self._render_sim_view()
+
+        self.sim_live_timer = self.after(1000, self._live_sim_tick)
+
+    def _stop_live_simulation(self):
+        self.sim_is_live = False
+        if self.sim_live_timer:
+            self.after_cancel(self.sim_live_timer)
+            self.sim_live_timer = None
+
+        shape = self.sim_shape_var.get()
+        self._write_sim_cmd_file(shape, stop=1)
+
+        if self.sim_modelsim_proc:
+            try:
+                self.sim_modelsim_proc.wait(timeout=1.5)
+            except Exception:
+                try:
+                    self.sim_modelsim_proc.terminate()
+                except Exception:
+                    pass
+            self.sim_modelsim_proc = None
+
+        self.btn_start_sim.config(state="normal", bg="#007acc", cursor="hand2")
+        self.btn_stop_sim.config(state="disabled", bg="#cccccc", cursor="arrow")
+
+        self.lbl_modelsim_status.config(
+            text=self.tr("modelsim_status_stopped").format(elapsed=self.sim_elapsed_seconds),
+            foreground="#00aa00"
+        )
+        self.sim_progress.config(value=self.sim_progress["maximum"])
+
+    def _check_worker_queue(self):
+        try:
+            while True:
+                cb = self._worker_queue.get_nowait()
+                cb()
+        except queue.Empty:
+            pass
+        self.after(50, self._check_worker_queue)
 
 
 if __name__ == "__main__":

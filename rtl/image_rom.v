@@ -69,7 +69,7 @@ module image_rom (
     wire [16:0] address;
     wire [2:0] q;
 
-    assign address = (17'd320 * img_y) + img_x;
+    assign address = (pixel_x < 10'd640 && pixel_y < 10'd480) ? (17'd320 * img_y) + img_x : 17'd0;
 
     altsyncram #(
         .operation_mode("ROM"),

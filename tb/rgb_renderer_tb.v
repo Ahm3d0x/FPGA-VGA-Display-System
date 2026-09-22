@@ -39,6 +39,9 @@ module rgb_renderer_tb ();
         begin
             shape_form = test_shape;
             video_on   = test_video_on;
+            pixel_x    = 10'd0;
+            pixel_y    = 10'd0;
+            @(posedge clk);
 
             // Open file
             file = $fopen($sformatf("../data/out/photo_%0d.ppm", test_shape), "w");
@@ -53,18 +56,22 @@ module rgb_renderer_tb ();
             $fwrite(file, "255\n");
 
             // Scan image
-            for (y = 0; y < 480; y = y + 1) begin
-                for (x = 0; x < 640; x = x + 1) begin
+            // for (y = 0; y < 480; y = y + 1) begin
+            //     for (x = 0; x < 640; x = x + 1) begin
+            for (y = 0; y < 525; y = y + 1) begin
+                for (x = 0; x < 800; x = x + 1) begin
                     pixel_x = x;
                     pixel_y = y;
                     @(posedge clk);
                     #1;
-                    // Write RGB (safeguarded against unknown/x values)
-                    $fwrite(file, "%0d ", (red   === 1'b1) ? 255 : 0);
-                    $fwrite(file, "%0d ", (green === 1'b1) ? 255 : 0);
-                    $fwrite(file, "%0d ", (blue  === 1'b1) ? 255 : 0);
+                    if (x < 640 && y < 480 && video_on) begin
+                        // Write RGB (safeguarded against unknown/x values)
+                        $fwrite(file, "%0d ", (red   === 1'b1) ? 255 : 0);
+                        $fwrite(file, "%0d ", (green === 1'b1) ? 255 : 0);
+                        $fwrite(file, "%0d ", (blue  === 1'b1) ? 255 : 0);
+                        if (x == 639) $fwrite(file, "\n");
+                    end
                 end
-                $fwrite(file, "\n");
             end
             // Close file
             $fclose(file);
@@ -75,26 +82,29 @@ module rgb_renderer_tb ();
         end
     endtask
 
+
+
     // main test initial block
     initial begin
         clk = 0;
         // Test Graphics Engine
-        generate_ppm(4'd0,1'b1);
-        generate_ppm(4'd1,1'b1);
-        generate_ppm(4'd2,1'b1);
-        generate_ppm(4'd3,1'b1);
-        generate_ppm(4'd4,1'b1);
-        generate_ppm(4'd5,1'b1);
-        generate_ppm(4'd6,1'b1);
-        generate_ppm(4'd7,1'b1);
-        generate_ppm(4'd8,1'b1);
-        generate_ppm(4'd9,1'b1);
-        generate_ppm(4'd10,1'b1);
+        generate_ppm(4'd0, 1'b1);
+        generate_ppm(4'd1, 1'b1);
+        generate_ppm(4'd2, 1'b1);
+        generate_ppm(4'd3, 1'b1);
+        generate_ppm(4'd4, 1'b1);
+        generate_ppm(4'd5, 1'b1);
+        generate_ppm(4'd6, 1'b1);
+        generate_ppm(4'd7, 1'b1);
+        generate_ppm(4'd8, 1'b1);
+        generate_ppm(4'd9, 1'b1);
+        generate_ppm(4'd10, 1'b1);
         // Test Image ROM
-        generate_ppm(4'd11,1'b1);
+        generate_ppm(4'd11, 1'b1);
+        // Test Clock Renderer
+        generate_ppm(4'd12, 1'b1);
         $display("====================================");
         $display("ALL TESTS COMPLETED SUCCESSFULLY");
-        $display("====================================");
         $stop;
     end
 endmodule

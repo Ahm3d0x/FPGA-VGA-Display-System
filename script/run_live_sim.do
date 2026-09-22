@@ -1,14 +1,10 @@
 # ==============================================================================
-# ModelSim / QuestaSim Simulation Script (run_rgb_renderer.do)
-# Testbench: rgb_renderer_tb
-# Target: Fast console execution generating output PPM files without waves
-# Execution on console: vsim -c -do run_rgb_renderer.do
+# ModelSim / QuestaSim Live Simulation Script (run_live_sim.do)
+# Testbench: vga_live_sim_tb
 # ==============================================================================
 
-# 1. Close any running simulation
 quit -sim
 
-# 2. Switch working directory to 'build'
 set current_dir [pwd]
 if {[file tail $current_dir] eq "script"} {
     cd ../build
@@ -20,7 +16,6 @@ if {[file tail $current_dir] eq "script"} {
     }
 }
 
-# 3. Ensure the output directory exists
 if {![file exists "../data/out"]} {
     file mkdir "../data/out"
 }
@@ -30,28 +25,21 @@ if {![file exists "../data/sim_cmd.txt"]} {
     close $fp
 }
 
-# 4. Create or refresh the 'work' library inside 'build'
-if {[file exists "work"]} {
-    catch {vdel -lib work -all}
+if {![file exists "work"]} {
+    vlib work
+    vmap work work
 }
-vlib work
-vmap work work
 
-# 5. Compile RTL modules and Testbench with SystemVerilog enabled
 vlog -sv -work work ../rtl/graphics_engine.v
 vlog -sv -work work ../rtl/image_rom.v
 vlog -sv -work work ../rtl/time_counter.v
 vlog -sv -work work ../rtl/clock_renderer.v
 vlog -sv -work work ../rtl/rgb_renderer.v
-vlog -sv -work work ../tb/rgb_renderer_tb.v
+vlog -sv -work work ../tb/vga_live_sim_tb.v
 
-# 6. Launch simulation (optimized for fast execution, with Altera megafunctions library)
-vsim -L altera_mf_ver work.rgb_renderer_tb
-
-# 7. Run the full test sequence to generate all output images
+vsim -L altera_mf_ver work.vga_live_sim_tb
 run -all
 
-# 8. Exit automatically if running in console/batch mode
 if {[batch_mode]} {
     quit -f
 }
